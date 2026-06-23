@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+html, body, #root {
+  background: transparent !important;
+  margin: 0;
+  padding: 0;
+}
 
 video {
   position: absolute;
@@ -10,6 +15,8 @@ video {
   object-fit: cover !important;
 
   top: 40px !important;
+}
 
-
+.mindar-ui-loading {
+  display: none !important;
 }

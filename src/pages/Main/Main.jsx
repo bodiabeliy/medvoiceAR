@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import MindARViewer from "../../widgets/mindar-viewer";
-
 import { categoryTopicsList } from "../../utils/db";
 
 const Main = () => {
@@ -11,38 +10,45 @@ const Main = () => {
   useEffect(() => {
     if (categoryTopicsList.length > 0) {
       const AR_children = [];
+      let foundTemplate = "";
 
-      categoryTopicsList?.map((item) => {
-        item.topicItems?.map((topicItem) => {
+      categoryTopicsList.forEach((item) => {
+        item.topicItems?.forEach((topicItem) => {
           if (topicItem.parentTopic === item.topicName) {
             AR_children.push(topicItem);
-            setImageTemplate(item?.imageTemplate);
-
-            return topicItem;
+            foundTemplate = item.imageTemplate; // ✅ collect locally, set once
           }
-          return AR_children;
         });
       });
 
       if (AR_children.length > 0) {
         setChildrenItems(AR_children);
+        setImageTemplate(foundTemplate); // ✅ single set after loop
       }
     }
-  }, [categoryTopicsList]);
+  }, []); // ✅ categoryTopicsList is a constant, no need in deps
 
   useEffect(() => {
     setStarted("aframe");
-    return () => {
-      setStarted(null);
-    };
+    return () => setStarted(null);
   }, []);
+
+  // ✅ Guard: don't render MindAR until data AND template are ready
+  const isReady = started === "aframe" && childrenItems.length > 0 && imageTemplate !== "";
 
   return (
     <>
       <div style={{ padding: "10px" }}>
         <b>Medvoice</b>
       </div>
-      {started === "aframe" && (
+
+      {!isReady && (
+        <div style={{ padding: "10px", color: "gray" }}>
+          Завантаження...
+        </div>
+      )}
+
+      {isReady && (
         <MindARViewer
           children_AR_list={childrenItems}
           imageTargetTemplate={imageTemplate}
@@ -51,4 +57,5 @@ const Main = () => {
     </>
   );
 };
+
 export default Main;
