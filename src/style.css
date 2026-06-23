@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+video {
+  position: absolute;
+  width: 100vw !important;
+  height: calc(100vh - 40px) !important;
+  object-fit: cover !important;
+
+  top: 40px !important;
+
+
+}
