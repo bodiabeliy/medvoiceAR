@@ -1,9 +1,9 @@
 export const categoryTopicsList = [
   {
     isActive: true,
-    image: `https://soundgame-server.onrender.com/birds/topicImage.png`,
-    imageTemplate: `http://localhost:5000/test/targetImage.mind`,
-    userExample: `https://soundgame-server.onrender.com/birds/birds_template.png`,
+    image: ``,
+    imageTemplate: `https://medvoicear-server.onrender.com/banner/targetImage.mind`,
+    userExample: ``,
     topicName: "MedVoice",
     topicItems: [
       {
@@ -11,7 +11,7 @@ export const categoryTopicsList = [
         itemName: "MedVoice Video",
         targetIndex: 0,
         type: "video",                                        // ← new video item
-        video: `http://localhost:5000/test/overlay.mp4`,
+        video: `https://medvoicear-server.onrender.com/banner/bannerVideo.mp4`,
         greenScreen: true,                                    // ← removes green bg
       },
     ]
