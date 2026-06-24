@@ -2,15 +2,19 @@ import React, { useEffect, useRef, useState } from "react";
 import "aframe";
 import "mind-ar/dist/mindar-image-aframe.prod.js";
 
+// ─── iOS detection (stable, runs once) ────────────────────────────────────────
+const isIOS =
+  /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
 const MindARViewer = ({ children_AR_list, imageTargetTemplate }) => {
-  const sceneRef = useRef(null);
+  const sceneRef  = useRef(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
+  // ─── Main AR effect — runs on mount ─────────────────────────────────────────
   useEffect(() => {
     const sceneEl = sceneRef.current;
-    if (!sceneEl) return;
 
-    // ✅ Register chromakey shader safely inside useEffect
+    // ── Register chromakey shader (once) ────────────────────────────────────
     if (window.AFRAME && !window.AFRAME.shaders.chromakey) {
       window.AFRAME.registerShader("chromakey", {
         schema: {
@@ -33,28 +37,21 @@ const MindARViewer = ({ children_AR_list, imageTargetTemplate }) => {
 
           void main() {
             vec4 texColor = texture2D(src, vUv);
-
             float r = texColor.r;
             float g = texColor.g;
             float b = texColor.b;
 
-            float luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-
-            float maxC = max(r, max(g, b));
-            float minC = min(r, min(g, b));
-            float saturation = (maxC < 0.001) ? 0.0 : (maxC - minC) / maxC;
-
-            // High blue+red, low green = purple content worth keeping
+            float luminance    = 0.299 * r + 0.587 * g + 0.114 * b;
+            float maxC         = max(r, max(g, b));
+            float minC         = min(r, min(g, b));
+            float saturation   = (maxC < 0.001) ? 0.0 : (maxC - minC) / maxC;
             float purpleStrength = (r + b) * 0.5 - g * 2.0;
 
-            // Discard: dark AND unsaturated AND not strong purple
             bool isBackground = (luminance < 0.18) && (saturation < 0.55) && (purpleStrength < 0.15);
             if (isBackground) discard;
 
-            // Soft fade for near-background pixels
             float edgeFade = smoothstep(0.10, 0.25, luminance) * smoothstep(0.40, 0.60, saturation);
-            float alpha = max(edgeFade, smoothstep(0.10, 0.20, purpleStrength));
-
+            float alpha    = max(edgeFade, smoothstep(0.10, 0.20, purpleStrength));
             if (alpha < 0.08) discard;
 
             gl_FragColor = vec4(texColor.rgb, texColor.a * alpha);
@@ -63,13 +60,13 @@ const MindARViewer = ({ children_AR_list, imageTargetTemplate }) => {
       });
     }
 
-    // ── MindAR config ─────────────────────────────────────────────────────
+    // ── MindAR config ────────────────────────────────────────────────────────
     sceneEl.setAttribute(
       "mindar-image",
       `imageTargetSrc: ${imageTargetTemplate}; autoStart: false; maxTrack: ${children_AR_list.length}`
     );
 
-    // ── Assets ────────────────────────────────────────────────────────────
+    // ── Assets ───────────────────────────────────────────────────────────────
     const assetsEl = document.createElement("a-assets");
     assetsEl.setAttribute("timeout", "30000");
 
@@ -81,7 +78,7 @@ const MindARViewer = ({ children_AR_list, imageTargetTemplate }) => {
         video.setAttribute("preload",     "auto");
         video.setAttribute("crossorigin", "anonymous");
         video.setAttribute("loop",        "true");
-        video.setAttribute("playsinline", "true");
+        video.setAttribute("playsinline", "true"); // required on iOS
         video.setAttribute("autoplay",    "true");
         video.muted = true;
         assetsEl.appendChild(video);
@@ -97,13 +94,22 @@ const MindARViewer = ({ children_AR_list, imageTargetTemplate }) => {
 
     sceneEl.appendChild(assetsEl);
 
-    // ── Camera ────────────────────────────────────────────────────────────
+    // ── Camera — deferred on iOS to avoid "h.fov = a" crash ─────────────────
     const cameraEl = document.createElement("a-camera");
     cameraEl.setAttribute("position",      "0 0 0");
     cameraEl.setAttribute("look-controls", "enabled: false");
-    sceneEl.appendChild(cameraEl);
 
-    // ── Entities ──────────────────────────────────────────────────────────
+    if (isIOS) {
+      sceneEl.addEventListener(
+        "renderstart",
+        () => sceneEl.appendChild(cameraEl),
+        { once: true }
+      );
+    } else {
+      sceneEl.appendChild(cameraEl);
+    }
+
+    // ── Entities ─────────────────────────────────────────────────────────────
     children_AR_list.forEach((item) => {
       const anchor = document.createElement("a-entity");
       anchor.setAttribute("mindar-image-target", `targetIndex: ${item.targetIndex}`);
@@ -154,93 +160,100 @@ const MindARViewer = ({ children_AR_list, imageTargetTemplate }) => {
           if (audio) { audio.pause(); audio.currentTime = 0; }
         });
 
-        modelEntity.addEventListener("model-loaded", () => {
-          console.log("✅ model-loaded:", item.itemName);
-        });
-        modelEntity.addEventListener("model-error", (e) => {
-          console.error("❌ model-error:", item.itemName, e);
-        });
+        modelEntity.addEventListener("model-loaded", () =>
+          console.log("✅ model-loaded:", item.itemName)
+        );
+        modelEntity.addEventListener("model-error", (e) =>
+          console.error("❌ model-error:", item.itemName, e)
+        );
       }
 
       sceneEl.appendChild(anchor);
     });
 
-    // ── Scene loaded handler ───────────────────────────────────────────────
-const handleLoaded = () => {
-  const renderer = sceneEl.renderer;
-  if (renderer) {
-    renderer.setClearColor(0x000000, 0);
-    renderer.setPixelRatio(window.devicePixelRatio);
-  }
+    // ── Scene loaded handler ──────────────────────────────────────────────────
+    const handleLoaded = () => {
+      // ✅ iOS Safari: retry until renderer is actually ready
+      const init = () => {
+        const renderer = sceneEl.renderer;
+        if (!renderer) {
+          setTimeout(init, 100);
+          return;
+        }
 
-  const canvas = sceneEl.querySelector("canvas");
-  if (canvas) {
-    canvas.style.background = "transparent";
-    canvas.style.backgroundColor = "transparent";
-  }
+        renderer.setClearColor(0x000000, 0);
+        renderer.setPixelRatio(window.devicePixelRatio);
 
-  const fixCameraVideo = () => {
-    document.querySelectorAll("video[autoplay][muted]").forEach((vid) => {
-      if (vid.srcObject) {
-        vid.style.position  = "fixed";
-        vid.style.top       = "0";
-        vid.style.left      = "0";
-        vid.style.width     = "100vw";
-        vid.style.height    = "100vh";
-        vid.style.objectFit = "cover";
-        vid.style.zIndex    = "-1";
-      }
-    });
-  };
+        const canvas = sceneEl.querySelector("canvas");
+        if (canvas) {
+          canvas.style.background      = "transparent";
+          canvas.style.backgroundColor = "transparent";
+        }
 
-  const fixOverlays = () => {
-    document.querySelectorAll(".mindar-ui-overlay").forEach((el) => {
-      el.style.position = "fixed";
-      el.style.top      = "0";
-      el.style.left     = "0";
-      el.style.width    = "100vw";
-      el.style.height   = "100vh";
-      el.style.zIndex   = "10000";
-    });
-  };
+        const fixCameraVideo = () => {
+          document.querySelectorAll("video[autoplay]").forEach((vid) => {
+            if (vid.srcObject) {
+              vid.style.position  = "fixed";
+              vid.style.top       = "0";
+              vid.style.left      = "0";
+              vid.style.width     = "100vw";
+              vid.style.height    = "100vh";
+              vid.style.objectFit = "cover";
+              vid.style.zIndex    = "-1";
+            }
+          });
+        };
 
-  fixOverlays();
-  fixCameraVideo();
+        const fixOverlays = () => {
+          document.querySelectorAll(".mindar-ui-overlay").forEach((el) => {
+            el.style.position = "fixed";
+            el.style.top      = "0";
+            el.style.left     = "0";
+            el.style.width    = "100vw";
+            el.style.height   = "100vh";
+            el.style.zIndex   = "10000";
+          });
+        };
 
-  setTimeout(() => {
-    const arSystem = sceneEl.systems?.["mindar-image-system"];
-    if (arSystem) {
-      try {
-        arSystem.start();
-      } catch (err) {
-        console.warn("MindAR start error:", err);
-      }
-    }
-
-    fixOverlays();
-    fixCameraVideo();
-
-    // ✅ NEW: don't reveal scene until camera feed is actually live
-    const safetyTimeout = setTimeout(() => setIsLoaded(true), 3000);
-
-    const waitForCamera = () => {
-      const camVid = [...document.querySelectorAll("video")].find(
-        (v) => v.srcObject && v.readyState >= 2  // HAVE_CURRENT_DATA
-      );
-      if (camVid) {
-        clearTimeout(safetyTimeout);
+        fixOverlays();
         fixCameraVideo();
-        setIsLoaded(true);
-      } else {
-        setTimeout(waitForCamera, 100);
-      }
+
+        setTimeout(() => {
+          const arSystem = sceneEl.systems?.["mindar-image-system"];
+          if (arSystem) {
+            try {
+              arSystem.start();
+            } catch (err) {
+              console.warn("MindAR start error:", err);
+            }
+          }
+
+          fixOverlays();
+          fixCameraVideo();
+
+          // Wait for real camera feed before revealing scene
+          const safetyTimeout = setTimeout(() => setIsLoaded(true), 5000);
+
+          const waitForCamera = () => {
+            const camVid = [...document.querySelectorAll("video")].find(
+              (v) => v.srcObject && v.readyState >= 2
+            );
+            if (camVid) {
+              clearTimeout(safetyTimeout);
+              fixCameraVideo();
+              setIsLoaded(true);
+            } else {
+              setTimeout(waitForCamera, 150);
+            }
+          };
+          waitForCamera();
+        }, isIOS ? 500 : 200); // ✅ iOS needs more time
+
+        setTimeout(fixCameraVideo, 1500);
+      };
+
+      init();
     };
-    waitForCamera();
-
-  }, 200);
-
-  setTimeout(() => fixCameraVideo(), 1500);
-};
 
     if (sceneEl.hasLoaded) {
       handleLoaded();
@@ -248,26 +261,28 @@ const handleLoaded = () => {
       sceneEl.addEventListener("loaded", handleLoaded);
     }
 
-    // ── Cleanup ───────────────────────────────────────────────────────────
+    // ── Cleanup ───────────────────────────────────────────────────────────────
     return () => {
       sceneEl.removeEventListener("loaded", handleLoaded);
 
       const arSystem = sceneEl.systems?.["mindar-image-system"];
-      if (arSystem) arSystem.stop();
+      if (arSystem) {
+        try { arSystem.stop(); } catch (_) {}
+      }
 
       document.querySelectorAll(".mindar-ui-overlay").forEach((el) => el.remove());
-      document.querySelectorAll("video[autoplay]").forEach((el) => el.remove());
 
       document.querySelectorAll("video").forEach((video) => {
         const stream = video.srcObject;
         if (stream) stream.getTracks().forEach((track) => track.stop());
       });
     };
-  }, []);
+  }, []); // ✅ runs once on mount
 
+  // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <>
-      {/* ✅ Preloader — visible only while scene loads */}
+      {/* ── Preloader — shown until camera is live ──────────────────────────── */}
       {!isLoaded && (
         <div style={{
           position:       "fixed",
@@ -291,7 +306,6 @@ const handleLoaded = () => {
             borderRadius: "50%",
             animation:    "spin 1s linear infinite",
           }} />
-
           <p style={{
             color:         "#a064ff",
             fontSize:      "14px",
@@ -300,9 +314,8 @@ const handleLoaded = () => {
             textTransform: "uppercase",
             margin:        0,
           }}>
-           Завантаження...
+            Завантаження...
           </p>
-
           <style>{`
             @keyframes spin {
               from { transform: rotate(0deg); }
@@ -312,33 +325,33 @@ const handleLoaded = () => {
         </div>
       )}
 
-      {/* ✅ Scene — always mounted but hidden until ready */}
+      {/* ── AR scene — hidden until camera is ready ─────────────────────────── */}
       <div style={{
-        position:      "fixed",
-        top:           0,
-        left:          0,
-        width:         "100vw",
-        height:        "100vh",
-        zIndex:        9999,
-        background:    "transparent",
-        opacity:       isLoaded ? 1 : 0,
-        pointerEvents: isLoaded ? "auto" : "none",
-        transition:    "opacity 0.5s ease",
-      }}>
-        <a-scene
-          ref={sceneRef}
-          color-space="sRGB"
-          embedded
-          renderer="colorManagement: true, physicallyCorrectLights; alpha: true"
-          vr-mode-ui="enabled: false"
-          device-orientation-permission-ui="enabled: false"
-          style={{
-            width:      "100%",
-            height:     "100%",
-            background: "transparent",
-          }}
-        />
-      </div>
+          position:      "fixed",
+          top:           0,
+          left:          0,
+          width:         "100vw",
+          height:        "100vh",
+          zIndex:        9999,
+          background:    "transparent",
+          opacity:       isLoaded ? 1 : 0,
+          pointerEvents: isLoaded ? "auto" : "none",
+          transition:    "opacity 0.5s ease",
+        }}>
+          <a-scene
+            ref={sceneRef}
+            color-space="sRGB"
+            embedded
+            renderer="colorManagement: true, physicallyCorrectLights; alpha: true"
+            vr-mode-ui="enabled: false"
+            device-orientation-permission-ui="enabled: false"
+            style={{
+              width:      "100%",
+              height:     "100%",
+              background: "transparent",
+            }}
+          />
+        </div>
     </>
   );
 };
