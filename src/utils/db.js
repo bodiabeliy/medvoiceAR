@@ -2,7 +2,7 @@ export const categoryTopicsList = [
   {
     isActive: true,
     image: ``,
-    imageTemplate: `https://medvoicear-server.onrender.com/banner/targetImage.mind`,
+    imageTemplate: `https://ar.medvoice.net/api/banner/targetImage.mind`,
     userExample: ``,
     topicName: "MedVoice",
     topicItems: [
@@ -11,7 +11,7 @@ export const categoryTopicsList = [
         itemName: "MedVoice Video",
         targetIndex: 0,
         type: "video",                                        // ← new video item
-        video: `https://medvoicear-server.onrender.com/banner/bannerVideo.mp4`,
+        video: `https://ar.medvoice.net/api/banner/bannerVideo.mp4`,
         greenScreen: true,                                    // ← removes green bg
       },
     ]
